@@ -1,5 +1,5 @@
 from langchain_groq import ChatGroq
-import settings
+from app import settings
 import logging
 import os
 from dotenv import load_dotenv

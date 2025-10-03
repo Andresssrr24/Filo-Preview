@@ -4,22 +4,25 @@ from app import settings
 import logging
 import os
 from dotenv import load_dotenv
+from app.llms.llms import llms
 
 load_dotenv()
 logger = logging.getLogger(__name__)
 
 retriever_tools_settings = settings.RETRIEVER_TOOLS_SETTINGS
+models = llms()
 
 class RetrieverTools:
     """Retriever tools for llm"""
-    def __init__(self, vecstore, query_generator_llm, tavily_api_key=os.getenv("TAVILY_API_KEY")):
-        self.base_retriever = vecstore.as_retriever(
+    def __init__(self, vecstore, query_generator_llm=models["query_generator"], tavily_api_key=os.getenv("TAVILY_API_KEY")):
+        self.vecstore = vecstore
+        self.base_retriever = self.vecstore.as_retriever(
             search_type=retriever_tools_settings["base_retriever_search_type"],
             search_kwargs={"k": retriever_tools_settings["base_retriever_k"]}
         )
         self.multi_q_retriever = MultiQueryRetriever.from_llm(
             include_original=True, 
-            retriever=vecstore.as_retriever(
+            retriever=self.vecstore.as_retriever(
                 search_type=retriever_tools_settings["multi_query_search_type"], search_kwargs={"k": retriever_tools_settings["multi_query_k"]}
                 ), 
             llm=query_generator_llm
@@ -34,24 +37,48 @@ class RetrieverTools:
         for i, doc in enumerate(docs, 1):
             page = doc.metadata.get('page_label', 'N/A')
             source = doc.metadata.get('file_name', 'N/A')
-            score = doc.metadata.get('score', 'N/A')
 
             form_docs.append(
                 f"Document {i}:\n"
                 f"Source: {source}\n"
                 f"Page: {page}\n"
-                f"Score: {score}\n"
                 f"Content: {doc.page_content}"
             )
 
         return "\n\n".join(form_docs)
 
+    def check_vector_store_content(self):
+        """Check if vector store has documents"""
+        try:
+            # Try to get all documents (if supported by your vector store)
+            if hasattr(self.base_retriever, 'get_relevant_documents'):
+                # Get some test queries
+                test_docs = self.base_retriever.invoke("test")
+                logger.info(f"Test query returned {len(test_docs)} docs")
+                
+            # Check vector store statistics
+            if hasattr(self.vecstore, '_collection'):
+                collection = self.vecstore._collection
+                count = collection.count()
+                logger.info(f"Vector store has {count} documents")
+                
+        except Exception as e:
+            logger.error(f"Error checking vector store: {e}")
+
+    '''def _get_docs_embeddings(self, docs: list, query: str = None) -> dict:
+        """Retrieve doc embeddings"""
+        try:
+            if hasattr(self.vecstore, '_collection'):
+                collection = self.vecstore._collection
+
+                doc_ids'''
+
     # Base retriever tool
     def base_retriever_tool(self, query: str) -> str:
-        """Basic embedding search using mmr with LangChain built-in retriever """
+        """Basic search using base retriever """
         try:
             docs = self.base_retriever.invoke(query)
-
+          
             if not docs:
                 return "No relevant docs found."
             

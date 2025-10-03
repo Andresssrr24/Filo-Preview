@@ -1,8 +1,9 @@
-from llama_index.readers.file import PDFReader
-from llama_index.core.node_parser import HierarchicalNodeParser, SemanticSplitterNodeParser 
+from llama_index.readers.file.docs.base import PDFReader
+from llama_index.core.node_parser import HierarchicalNodeParser, SemanticSplitterNodeParser, SimpleNodeParser # TODO: Change SimpleNodeParser for a own customized parser 
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from langchain.schema import Document
+from pathlib import Path
 from app import settings
 import logging
 
@@ -16,22 +17,28 @@ class DocIndexer:
     # TODO: Dinamically changes parameters depending doc size
     # todo: by now, this implementation is made for large and complex docs
     def pdf_to_nodes(self, 
-                     path: str='path_to_document',  #TODO: Place path
-                     chunk_size=collection_settings["chunk_sizes"], 
-                     chunk_overlap=collection_settings["chunk_overlap"]) -> list:
+                     path: str,  #TODO: Place path
+                     chunk_sizes: int = collection_settings["chunk_sizes"], 
+                     chunk_overlap: int =collection_settings["chunk_overlap"]) -> list:
         reader = PDFReader()
         docs = reader.load_data(file=path)
 
+        base_parser = SimpleNodeParser.from_defaults() # TODO: Change for own customized
+        parser_map = {"simple": base_parser}
+
         hierarch_parser = HierarchicalNodeParser(
-            chunk_size=chunk_size, 
+            chunk_size=chunk_sizes, 
             chunk_overlap=chunk_overlap, 
-            include_metadata=True)
+            include_metadata=True,
+            node_parser_map=parser_map,
+            node_parser_ids=['simple']
+            )
         hi_nodes = hierarch_parser.get_nodes_from_documents(docs)
 
         semantic_splitter = SemanticSplitterNodeParser(
             buffer_size=1,
             breakpoint_percentile_threshold=95,
-            embed_model=vecstore_global_settings["embedding_model"]
+            embed_model=vecstore_global_settings["embedding_model"],
         )
         
         nodes = []
@@ -61,7 +68,8 @@ class DocVecStore:
                 collection_name=collection_name,
                 collection_metadata=collection_metadata
             )
-            logger.info(f"Vector store {collection_name} loaded.")
+            if self.vecstore:
+                logger.info(f"Vector store {collection_name} loaded.")
             return self.vecstore
         except Exception as e:
             logger.error(f"Error while getting collection: {e}")

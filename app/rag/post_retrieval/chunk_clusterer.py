@@ -9,7 +9,7 @@
 - Detailed analysis
 - Low confidence
 '''
-import settings
+from app import settings
 import logging
 from sklearn.cluster import HDBSCAN
 from sklearn.metrics.pairwise import cosine_similarity
@@ -38,8 +38,6 @@ class Clusterer:
         centroid = cluster_data['centroid']
         similarities = cosine_similarity(embeddings, [centroid]).flatten()
         cluster_data['coherence'] = float(np.mean(similarities))
-        return cluster_data
-        
         return cluster_data
 
     def cluster_chunks(self, docs: list, embeddings: np.ndarray) -> np.ndarray:

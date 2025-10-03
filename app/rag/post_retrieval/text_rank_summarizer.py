@@ -61,12 +61,15 @@ class TextRankSummarizer:
         """Compute summary reliability per cluster"""
         reliability = 1.0
 
+        # Factor 1: cluster adequancy (if applies)
         # Use cluster coherence as factor just when it wasn't augmented
         if not self.is_augmented:
             # Factor 1: Cluster coherence
             coherence = cluster_data['coherence']
 
-        # Factor 2: Cluster size addequacy
+        # Factor 2: 
+
+        # Factor 3: Cluster size adequacy
         num_chunks = len(cluster_data)
         if num_chunks < cluster_adequancy["optimal_min"]:
             # heavy penalization below optimal
