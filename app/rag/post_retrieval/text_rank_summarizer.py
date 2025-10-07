@@ -9,15 +9,18 @@ Used when:
 from sumy.parsers.plaintext import PlaintextParser
 from sumy.nlp.tokenizers import Tokenizer
 from sumy.summarizers.text_rank import TextRankSummarizer
+from sklearn.metrics.pairwise import cosine_similarity
+import spacy
 from app import settings
 from heuristic_summarizer import HeuristicSummarizer
+from utils.entity_extractor import EntityExtractor
 import logging
 
 logger = logging.getLogger(__name__)
 
 thresholds = settings.TEXTRANK_SUMMARIZER_PARAMS["confidence_thresholds"]
 heuristic_summary_length = settings.TEXTRANK_SUMMARIZER_PARAMS["heuristic_summary_length"]
-cluster_adequancy = settings.TEXTRANK_SUMMARIZER_PARAMS["cluster_adequancy"]
+cluster_adequacy = settings.TEXTRANK_SUMMARIZER_PARAMS["cluster_adequacy"]
 penalties = settings.TEXTRANK_SUMMARIZER_PARAMS["penalties"]
 
 class TextRankSummarizer:
@@ -61,26 +64,32 @@ class TextRankSummarizer:
         """Compute summary reliability per cluster"""
         reliability = 1.0
 
-        # Factor 1: cluster adequancy (if applies)
+        # Factor 1: cluster adequacy (if applies)
         # Use cluster coherence as factor just when it wasn't augmented
         if not self.is_augmented:
             # Factor 1: Cluster coherence
             coherence = cluster_data['coherence']
 
-        # Factor 2: 
+        # Factor 2 cosine similarity between origal an summarized chunk
+        # ? Will use this as factor?
+        cosine_sim = None
 
         # Factor 3: Cluster size adequacy
         num_chunks = len(cluster_data)
-        if num_chunks < cluster_adequancy["optimal_min"]:
+        if num_chunks < cluster_adequacy["optimal_min"]:
             # heavy penalization below optimal
-            adequancy_score = penalties["growth_rate_below_optimal"] * num_chunks
-        elif num_chunks > cluster_adequancy["optimal_max"]:
+            adequacy_score = penalties["growth_rate_below_optimal"] * num_chunks
+        elif num_chunks > cluster_adequacy["optimal_max"]:
             # moderate penalization above optimal
-            adequancy_score = penalties["growth_rate_above_optimal"] * num_chunks
+            adequacy_score = penalties["growth_rate_above_optimal"] * num_chunks
         else:
-            adequancy_score = 1.0
+            adequacy_score = 1.0
 
-        # Factor 3: Summary coverage
+        # Factor 4: Summary coverage
+
+        # Facor 5: Philosophy entities extraction
+        extractor = EntityExtractor()
+        ner = extractor.extract(cluster_data["documents"])
 
         pass
 

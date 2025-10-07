@@ -1,16 +1,20 @@
 from langchain.retrievers.multi_query import MultiQueryRetriever
 from langchain_tavily import TavilySearch
-from app import settings
 import logging
+import hashlib
 import os
+from app import settings
 from dotenv import load_dotenv
+from app.utils.retriever_utils import EmbeddingExtractionHelper
 from app.llms.llms import llms
 
 load_dotenv()
 logger = logging.getLogger(__name__)
 
 retriever_tools_settings = settings.RETRIEVER_TOOLS_SETTINGS
+
 models = llms()
+emb_extractor_help = EmbeddingExtractionHelper()
 
 class RetrieverTools:
     """Retriever tools for llm"""
@@ -31,23 +35,72 @@ class RetrieverTools:
             api_key=tavily_api_key, 
             max_results=retriever_tools_settings["web_search_k"], search_depth=retriever_tools_settings["search_depth"]
         )
-
-    def _format_output(self, docs: list) -> str:
+    def _format_output(self, docs: list, query: str, include_embeddings: bool = False) -> dict:
+        """Output formatter that returns structured data from retrieved docs"""
         form_docs = []
+        embedding_data = None
+
+        # get embeddings if requested
+        if include_embeddings and query:
+            embedding_data = emb_extractor_help.get_doc_embeddings(docs=docs, query=query, vecstore=self.vecstore)
+
+            # add similarity scores to doc metadat
+            if embedding_data and embedding_data.get("similarity_scores"):
+                for i, doc in enumerate(docs):
+                    if i < len(embedding_data["similarity_scores"]):
+                        doc.metadata["similarity_scores"] = embedding_data["similarity_scores"][i]
+
+        # format docs
         for i, doc in enumerate(docs, 1):
             page = doc.metadata.get('page_label', 'N/A')
             source = doc.metadata.get('file_name', 'N/A')
+            similarity_score = doc.metadata.get('similarity_score', 'N/A')
+
+            # format sim score
+            sim = f"{similarity_score:.3f}" if isinstance(similarity_score, (int, float)) else similarity_score
 
             form_docs.append(
                 f"Document {i}:\n"
                 f"Source: {source}\n"
                 f"Page: {page}\n"
+                f"Similarity: {similarity_score}\n"
                 f"Content: {doc.page_content}"
             )
+        
+        # build result
+        result = {
+            "formatted_text": "\n\n".join(form_docs),
+            "document_count": len(docs),
+            "query": query
+        }
 
-        return "\n\n".join(form_docs)
+        # add embeddings if available        
+        if include_embeddings and embedding_data:
+            result["embeddings"] = embedding_data
+
+        return result
+    
+    def _append_doc_id(self, docs: list) -> list:
+        """Generate id for each retrieved doc and append relevant data"""
+        for i, doc in enumerate(docs):
+            # Ensure metadata exists
+            if not hasattr(doc, 'metadata') or doc.metadata is None:
+                doc.metadata = {}
+            
+            # Generate unique ID using content hash and index
+            content_preview = doc.page_content[:100]  # First 50 chars for hash
+            content_hash = hashlib.md5(content_preview.encode()).hexdigest()[:6]
+            
+            doc.metadata.update({
+                "document_id": f"retrieved_{content_hash}_{i}",
+                "retrieval_rank": i + 1,
+                "content_length": len(doc.page_content)
+            })
+        
+        return docs
 
     def check_vector_store_content(self):
+        # ! TEST FUNCTION
         """Check if vector store has documents"""
         try:
             # Try to get all documents (if supported by your vector store)
@@ -65,16 +118,8 @@ class RetrieverTools:
         except Exception as e:
             logger.error(f"Error checking vector store: {e}")
 
-    '''def _get_docs_embeddings(self, docs: list, query: str = None) -> dict:
-        """Retrieve doc embeddings"""
-        try:
-            if hasattr(self.vecstore, '_collection'):
-                collection = self.vecstore._collection
-
-                doc_ids'''
-
     # Base retriever tool
-    def base_retriever_tool(self, query: str) -> str:
+    def base_retriever_tool(self, query: str, include_embeddings: bool = False) -> str:
         """Basic search using base retriever """
         try:
             docs = self.base_retriever.invoke(query)
@@ -82,25 +127,25 @@ class RetrieverTools:
             if not docs:
                 return "No relevant docs found."
             
-            return self._format_output(docs)
+            return self._format_output(docs, query, include_embeddings)
         
         except Exception as e:
             return f"Error retrieving documents: {str(e)}"
 
     # Multi-Query retriever tool
     # TODO: Fallback must be executed programmatically to reduce api calls
-    def multi_query_retriever_tool(self, query: str) -> str: # TODO: optimize main llm token usage
+    def multi_query_retriever_tool(self, query: str, include_embeddings: bool = False) -> str: # TODO: optimize main llm token usage
         """Retrieve documents by generating multiple synthetic queries with an llm """
         try:
             docs = self.multi_q_retriever.invoke(query)
             
             if not docs:
-                logger.info("No docs found, changing to base_retriever")
+                logger.warning("No docs found, changing to base_retriever")
                 return self.base_retriever_tool(query)
             
-            return self._format_output(docs)
+            return self._format_output(docs, query, include_embeddings)
         except:
-            logger.info("Couldn't use multi-query retriever, changing to base_retriever")
+            logger.warning("Couldn't use multi-query retriever, changing to base_retriever")
             return self.base_retriever_tool(query)
         
     def web_search_tool(self, query: str) -> str: 

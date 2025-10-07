@@ -1,5 +1,5 @@
 from llama_index.readers.file.docs.base import PDFReader
-from llama_index.core.node_parser import HierarchicalNodeParser, SemanticSplitterNodeParser, SimpleNodeParser # TODO: Change SimpleNodeParser for a own customized parser 
+from llama_index.core.node_parser import SentenceSplitter, HierarchicalNodeParser, SemanticSplitterNodeParser, SimpleNodeParser # TODO: Change SimpleNodeParser for a own customized parser 
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_chroma import Chroma
 from langchain.schema import Document
@@ -17,13 +17,19 @@ class DocIndexer:
     # TODO: Dinamically changes parameters depending doc size
     # todo: by now, this implementation is made for large and complex docs
     def pdf_to_nodes(self, 
-                     path: str,  #TODO: Place path
+                     path: str = vecstore_global_settings["pdf_test"],  #TODO: Place path
                      chunk_sizes: int = collection_settings["chunk_sizes"], 
                      chunk_overlap: int =collection_settings["chunk_overlap"]) -> list:
         reader = PDFReader()
         docs = reader.load_data(file=path)
-
-        base_parser = SimpleNodeParser.from_defaults() # TODO: Change for own customized
+        splitter = SentenceSplitter(chunk_size=chunk_sizes[0],
+                                    chunk_overlap=chunk_overlap,
+                                    include_metadata=True
+                                    )
+        nodes = splitter.get_nodes_from_documents(docs)
+        logger.info(f"Indexed {len(nodes)} nodes")
+        # TODO: Implement this method
+        """base_parser = SimpleNodeParser.from_defaults() # TODO: Change for own customized
         parser_map = {"simple": base_parser}
 
         hierarch_parser = HierarchicalNodeParser(
@@ -39,12 +45,12 @@ class DocIndexer:
             buffer_size=1,
             breakpoint_percentile_threshold=95,
             embed_model=vecstore_global_settings["embedding_model"],
-        )
+        )"""
         
-        nodes = []
+        """nodes = []
         for node in hi_nodes:
             split_nodes = semantic_splitter.get_nodes_from_documents([node])
-            nodes.extend(split_nodes)
+            nodes.extend(split_nodes)"""
 
         return nodes
     
